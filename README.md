@@ -26,6 +26,19 @@ devices, and the charger.
 - **Launch at login**
 - Preview button next to each sound picker
 
+## Download & install (no building needed)
+
+1. Grab `Snoopy-vX.X.zip` from the
+   [latest release](https://github.com/01000001x01001110x01010011x01001000/snoopy/releases/latest)
+   and unzip it.
+2. Move `Snoopy.app` to `/Applications`.
+3. First launch: macOS will block it because the app isn't notarized by Apple.
+   Open **System Settings → Privacy & Security**, scroll down, and click
+   **Open Anyway** next to the Snoopy message (or run
+   `xattr -d com.apple.quarantine /Applications/Snoopy.app` and open normally).
+4. Look for the camera-shutter icon in the menu bar, pick your sounds, and
+   enable **Launch at login**.
+
 ## Build & run
 
 ```bash

@@ -1,5 +1,6 @@
 .build/
 .DS_Store
 Snoopy.app/
+Snoopy-*.zip
 *.xcodeproj
 .swiftpm/
