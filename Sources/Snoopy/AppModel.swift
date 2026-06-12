@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private let lidMonitor = LidMonitor()
+    private let sessionWatcher = SessionWatcher()
     private let usbWatcher = USBWatcher()
     private let displayWatcher = DisplayWatcher()
     private let audioWatcher = AudioWatcher()
@@ -66,9 +67,21 @@ final class AppModel: ObservableObject {
         defaults.register(defaults: [Keys.enabled: true, Keys.volume: 0.8])
         enabled = defaults.bool(forKey: Keys.enabled)
         volume = defaults.double(forKey: Keys.volume)
-        eventSounds = Self.loadEventSounds(defaults)
+
+        var sounds = Self.loadEventSounds(defaults)
+        // One-time migration: the open-type sound moves from lid-open (fires
+        // at wake, when audio is unreliable) to screen-unlock. Runs whenever
+        // no unlock preference exists yet, including fresh installs.
+        if sounds[.screenUnlock] == nil {
+            let openSound = sounds[.lidOpen] ?? SoundChoice(kind: .preset, value: "shutter-open")
+            sounds[.screenUnlock] = openSound
+            sounds[.lidOpen] = SoundChoice.none
+        }
+        eventSounds = sounds
+
         categoryEnabled = Self.loadCategoryEnabled(defaults)
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        saveEventSounds()
     }
 
     func sound(for event: SoundEvent) -> SoundChoice {
@@ -111,6 +124,11 @@ final class AppModel: ObservableObject {
         ) { [weak self] _ in
             self?.stopStalePlayers()
         }
+
+        sessionWatcher.onEvent = { [weak self] unlocked in
+            self?.handle(unlocked ? .screenUnlock : .screenLock)
+        }
+        sessionWatcher.start()
 
         usbWatcher.onEvent = { [weak self] plugged in
             self?.handle(plugged ? .usbPlug : .usbUnplug)

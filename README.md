@@ -6,8 +6,12 @@ devices, and the charger.
 
 ## Features
 
-- **Five event categories**, each with its own enable toggle and per-event sounds:
-  - **Lid** — open / close (camera-shutter defaults)
+- **Six event categories**, each with its own enable toggle and per-event sounds:
+  - **Lid** — open / close (the open sound defaults to off; see Lock & Unlock)
+  - **Lock & Unlock** — sound after password/Touch ID unlock (the camera-shutter
+    "open" default lives here: unlock happens on a fully awake system, so the
+    sound is never late or swallowed like wake-time playback can be), plus an
+    optional lock sound
   - **USB devices** — plug in / unplug, any port
   - **Displays** — external monitor connect / disconnect
   - **Audio devices** — headphones, AirPods, USB audio connect / disconnect

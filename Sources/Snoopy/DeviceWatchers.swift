@@ -4,6 +4,31 @@ import Foundation
 import IOKit
 import IOKit.ps
 
+// MARK: - Screen lock / unlock
+
+/// Fires when the user locks or unlocks the session (password, Touch ID, or
+/// Apple Watch). Unlike wake-time events, unlock happens on a fully running
+/// system, so a sound played here is never late or swallowed.
+final class SessionWatcher {
+    var onEvent: ((_ unlocked: Bool) -> Void)?
+
+    func start() {
+        let center = DistributedNotificationCenter.default()
+        center.addObserver(
+            forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main
+        ) { [weak self] _ in
+            NSLog("Snoopy: screen unlocked")
+            self?.onEvent?(true)
+        }
+        center.addObserver(
+            forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main
+        ) { [weak self] _ in
+            NSLog("Snoopy: screen locked")
+            self?.onEvent?(false)
+        }
+    }
+}
+
 // MARK: - USB
 
 /// Fires when a USB device is attached or detached on any port.
