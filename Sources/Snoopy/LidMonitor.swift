@@ -30,6 +30,7 @@ final class LidMonitor {
     private var interestNotifyPort: IONotificationPortRef?
     private var interestNotifier: io_object_t = 0
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var pollTimer: Timer?
 
     func start() {
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
@@ -97,14 +98,27 @@ final class LidMonitor {
         workspaceObservers.append(center.addObserver(
             forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
         ) { [weak self] _ in
+            NSLog("Snoopy: NSWorkspace willSleep")
             self?.syncState()
         })
+
+        // 4. Safety net: with an external display the lid doesn't sleep the Mac
+        // (clamshell mode), so none of the sleep/wake signals fire — and the
+        // clamshell interest notification alone has proven unreliable. Poll the
+        // registry once a second so a lid change is never missed for long.
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.syncState()
+        }
+        timer.tolerance = 0.2
+        RunLoop.main.add(timer, forMode: .common)
+        pollTimer = timer
     }
 
     /// Re-reads the hardware clamshell state and fires onLidChange if it moved.
     private func syncState() {
         guard let closed = readClamshellState(), closed != lidClosed else { return }
         lidClosed = closed
+        NSLog("Snoopy: lid -> %@", closed ? "closed" : "open")
         onLidChange?(closed)
     }
 
@@ -121,6 +135,7 @@ final class LidMonitor {
 
     private func handleInterest(messageType: UInt32) {
         guard messageType == Self.messageClamshellStateChange else { return }
+        NSLog("Snoopy: clamshell interest notification")
         syncState()
     }
 
@@ -135,6 +150,7 @@ final class LidMonitor {
             // until it finishes.
             syncState()
             let delay = min(max(sleepDelayProvider?() ?? 0, 0), 5)
+            NSLog("Snoopy: system will sleep, holding %.2fs", delay)
             if delay > 0.05 {
                 let connection = powerConnection
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -146,6 +162,7 @@ final class LidMonitor {
         case Self.messageSystemHasPoweredOn:
             // Re-sync now and again shortly after, in case the clamshell
             // notification was missed during sleep or the registry lags.
+            NSLog("Snoopy: system powered on")
             syncState()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 self?.syncState()

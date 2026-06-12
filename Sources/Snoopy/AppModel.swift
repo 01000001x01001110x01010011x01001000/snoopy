@@ -200,7 +200,8 @@ final class AppModel: ObservableObject {
         do {
             let player = try AVAudioPlayer(contentsOf: url)
             player.volume = Float(volume)
-            player.play()
+            let started = player.play()
+            NSLog("Snoopy: play %@ started=%d", url.lastPathComponent, started ? 1 : 0)
             players.removeAll { !$0.player.isPlaying }
             players.append((player, Date()))
             if holdsSleep { lidClosePlayer = player }
