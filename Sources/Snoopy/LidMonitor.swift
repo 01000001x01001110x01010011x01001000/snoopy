@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import IOKit
 import IOKit.pwr_mgt
@@ -14,10 +15,6 @@ final class LidMonitor {
     /// off sleep (clamped to 5s). Return 0 to allow sleep immediately.
     var sleepDelayProvider: (() -> TimeInterval)?
 
-    /// Called when the system is about to sleep because the lid closed, in case
-    /// the close event raced ahead of the clamshell notification.
-    var onWillSleepWithLidClosed: (() -> Void)?
-
     private(set) var lidClosed = false
 
     // IOMessage.h constants are C macros, not imported into Swift.
@@ -32,6 +29,7 @@ final class LidMonitor {
     private var powerNotifier: io_object_t = 0
     private var interestNotifyPort: IONotificationPortRef?
     private var interestNotifier: io_object_t = 0
+    private var workspaceObservers: [NSObjectProtocol] = []
 
     func start() {
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
@@ -82,6 +80,32 @@ final class LidMonitor {
                 IONotificationPortGetRunLoopSource(port).takeUnretainedValue(),
                 .commonModes)
         }
+
+        // 3. NSWorkspace mirrors the sleep/wake events and is delivered very
+        // promptly in the user session — use it as a second signal so the open
+        // sound isn't at the mercy of late IOKit delivery after a deep sleep.
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(center.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.syncState()
+            // The clamshell registry value can lag right at wake; check again.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self?.syncState()
+            }
+        })
+        workspaceObservers.append(center.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.syncState()
+        })
+    }
+
+    /// Re-reads the hardware clamshell state and fires onLidChange if it moved.
+    private func syncState() {
+        guard let closed = readClamshellState(), closed != lidClosed else { return }
+        lidClosed = closed
+        onLidChange?(closed)
     }
 
     private func readClamshellState() -> Bool? {
@@ -96,12 +120,8 @@ final class LidMonitor {
     }
 
     private func handleInterest(messageType: UInt32) {
-        guard messageType == Self.messageClamshellStateChange,
-              let closed = readClamshellState(),
-              closed != lidClosed
-        else { return }
-        lidClosed = closed
-        onLidChange?(closed)
+        guard messageType == Self.messageClamshellStateChange else { return }
+        syncState()
     }
 
     private func handlePower(messageType: UInt32, argument: UnsafeMutableRawPointer?) {
@@ -110,16 +130,10 @@ final class LidMonitor {
         case Self.messageCanSystemSleep:
             IOAllowPowerChange(powerConnection, notificationID)
         case Self.messageSystemWillSleep:
-            // If the lid is closed, give the close sound a chance to start
-            // (covers the race where willSleep arrives before the clamshell
-            // notification) and hold sleep until it finishes.
-            if readClamshellState() == true {
-                if !lidClosed {
-                    lidClosed = true
-                    onLidChange?(true)
-                }
-                onWillSleepWithLidClosed?()
-            }
+            // If the close event raced ahead of the clamshell notification this
+            // gives the close sound a chance to start, then we hold sleep
+            // until it finishes.
+            syncState()
             let delay = min(max(sleepDelayProvider?() ?? 0, 0), 5)
             if delay > 0.05 {
                 let connection = powerConnection
@@ -130,12 +144,11 @@ final class LidMonitor {
                 IOAllowPowerChange(powerConnection, notificationID)
             }
         case Self.messageSystemHasPoweredOn:
-            // Re-sync in case the clamshell notification was missed during sleep.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                guard let self, let closed = self.readClamshellState(),
-                      closed != self.lidClosed else { return }
-                self.lidClosed = closed
-                self.onLidChange?(closed)
+            // Re-sync now and again shortly after, in case the clamshell
+            // notification was missed during sleep or the registry lags.
+            syncState()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.syncState()
             }
         default:
             break

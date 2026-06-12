@@ -45,13 +45,24 @@ final class USBWatcher {
     }
 
     private func drain(_ iterator: io_iterator_t) {
-        var count = 0
-        while case let obj = IOIteratorNext(iterator), obj != 0 {
-            IOObjectRelease(obj)
-            count += 1
+        var realDevices = 0
+        while case let device = IOIteratorNext(iterator), device != 0 {
+            if !Self.isInfrastructure(device) { realDevices += 1 }
+            IOObjectRelease(device)
         }
-        guard armed, count > 0 else { return }
+        guard armed, realDevices > 0 else { return }
         onEvent?(iterator == addedIterator)
+    }
+
+    /// Hubs and billboard devices are plumbing inside monitors, docks, and
+    /// chargers — not something the user plugged in by itself. Ignoring them
+    /// keeps a monitor plug from also sounding as a USB device.
+    private static func isInfrastructure(_ device: io_object_t) -> Bool {
+        guard let value = IORegistryEntryCreateCFProperty(
+            device, "bDeviceClass" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? Int
+        else { return false }
+        return value == 9 || value == 17 // 9 = hub, 17 = billboard
     }
 }
 

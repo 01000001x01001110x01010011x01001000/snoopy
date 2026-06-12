@@ -43,12 +43,13 @@ final class AppModel: ObservableObject {
         .audio: [.displays],
     ]
     // Suppressible categories wait this long before playing, in case a
-    // higher-priority event for the same plug is still on its way.
+    // higher-priority event for the same plug is still on its way. Display
+    // handshakes can take a couple of seconds after USB enumeration.
     private static let holdWindow: [SoundCategory: TimeInterval] = [
-        .usb: 1.5,
+        .usb: 2.5,
         .audio: 1.0,
     ]
-    private static let suppressionWindow: TimeInterval = 3.0
+    private static let suppressionWindow: TimeInterval = 6.0
 
     private enum Keys {
         static let enabled = "enabled"

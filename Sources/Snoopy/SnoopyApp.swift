@@ -16,11 +16,18 @@ struct SnoopyApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
+    private var activityToken: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu-bar only: no Dock icon (also set via LSUIElement in Info.plist,
         // but this covers running the bare executable during development).
         NSApp.setActivationPolicy(.accessory)
+        // Opt out of App Nap: a napped process gets hardware notifications
+        // delivered late, which delays sounds after long idle periods. This
+        // option still allows normal idle system sleep.
+        activityToken = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep,
+            reason: "Deliver hardware event sounds promptly")
         model.start()
     }
 }

@@ -19,8 +19,10 @@ devices, and the charger.
   sound, not a burst
 - **One plug, one sound**: a USB-C monitor or dock raises USB + display (+
   audio) events for a single cable plug — the most specific category wins
-  (Displays > Audio > USB), so you hear only your chosen display sound. Bare
-  USB devices play after a short ~1.5s hold used to detect this.
+  (Displays > Audio > USB), so you hear only your chosen display sound. USB
+  hubs and billboard devices (the plumbing inside monitors, docks, and
+  chargers) are ignored entirely; bare USB devices play after a short ~2.5s
+  hold used to detect multi-category plugs.
 - **Volume slider** independent of system volume
 - **Quick mute**: the main toggle at the top of the menu disables sounds instantly
 - **Launch at login**
