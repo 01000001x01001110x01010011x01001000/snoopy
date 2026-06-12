@@ -28,9 +28,10 @@ final class AppModel: ObservableObject {
     private let audioWatcher = AudioWatcher()
     private let powerWatcher = PowerWatcher()
 
-    private var players: [AVAudioPlayer] = []
+    private var players: [(player: AVAudioPlayer, startedAt: Date)] = []
     private weak var lidClosePlayer: AVAudioPlayer?
     private var lastClosePlay = Date.distantPast
+    private var wakeObserver: NSObjectProtocol?
     private var lastEventTime: [SoundEvent: Date] = [:]
     private var pendingPlays: [SoundCategory: DispatchWorkItem] = [:]
     private var lastCategoryPlay: [SoundCategory: Date] = [:]
@@ -96,9 +97,20 @@ final class AppModel: ObservableObject {
             guard let self, let player = self.lidClosePlayer, player.isPlaying,
                   Date().timeIntervalSince(self.lastClosePlay) < 3
             else { return 0 }
-            return player.duration - player.currentTime + 0.2
+            // The output hardware can take most of a second to spin up before
+            // anything is audible; without this margin the close sound freezes
+            // mid-play and resumes at the next wake instead.
+            return player.duration - player.currentTime + 1.0
         }
         lidMonitor.start()
+
+        // Any sound still "playing" at wake is a leftover that froze when the
+        // system slept — kill it so it doesn't replay over the open sound.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.stopStalePlayers()
+        }
 
         usbWatcher.onEvent = { [weak self] plugged in
             self?.handle(plugged ? .usbPlug : .usbUnplug)
@@ -166,9 +178,21 @@ final class AppModel: ObservableObject {
     }
 
     private func fire(_ event: SoundEvent) {
+        stopStalePlayers()
         lastCategoryPlay[event.category] = Date()
         if event == .lidClose { lastClosePlay = Date() }
         play(sound(for: event), holdsSleep: event == .lidClose)
+    }
+
+    /// Stops players that have been "playing" longer than their sound lasts —
+    /// they were frozen by a system sleep and would otherwise resume now.
+    private func stopStalePlayers() {
+        let now = Date()
+        for entry in players
+        where entry.player.isPlaying
+            && now.timeIntervalSince(entry.startedAt) > entry.player.duration + 0.5 {
+            entry.player.stop()
+        }
     }
 
     func play(_ choice: SoundChoice, holdsSleep: Bool = false) {
@@ -177,8 +201,8 @@ final class AppModel: ObservableObject {
             let player = try AVAudioPlayer(contentsOf: url)
             player.volume = Float(volume)
             player.play()
-            players.removeAll { !$0.isPlaying }
-            players.append(player)
+            players.removeAll { !$0.player.isPlaying }
+            players.append((player, Date()))
             if holdsSleep { lidClosePlayer = player }
         } catch {
             NSLog("Snoopy: failed to play \(url.path): \(error)")
